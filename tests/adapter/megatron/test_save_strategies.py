@@ -693,19 +693,50 @@ class TestMLFlashpointMegatronAsyncSaveStrategy:
             bound_metadata.storage_data = "NEW_DIRTY"
             assert strategy._cached_global_metadata.storage_data is None
 
-        def test_save_success(self, mocker, async_save_setup):
+        @pytest.mark.parametrize("has_preload", [True, False])
+        @pytest.mark.parametrize("cuda_initialized", [True, False])
+        @pytest.mark.parametrize("dist_initialized", [True, False])
+        @pytest.mark.parametrize("has_async_fn", [True, False])
+        @pytest.mark.parametrize("args_len", [0, 1, 2])
+        def test_sync_save_success(
+            self,
+            mocker,
+            async_save_setup,
+            has_preload,
+            cuda_initialized,
+            dist_initialized,
+            has_async_fn,
+            args_len,
+        ):
             """Tests that save method executes async_fn and finalize_fns synchronously with preload and cuda sync."""
             # Given
             strategy, checkpoint_id, sharded_state_dict, _ = async_save_setup
 
-            mock_async_fn = mocker.MagicMock()
-            mock_preload_fn = mocker.MagicMock(return_value="preload_result")
-            mock_finalize_fn1 = mocker.MagicMock()
-            mock_finalize_fn2 = mocker.MagicMock()
+            def dummy_async_fn(*args, **kwargs):
+                pass
+
+            def dummy_preload_fn():
+                return "preload_result"
+
+            def dummy_finalize_fn():
+                pass
+
+            mock_async_fn = (
+                mocker.MagicMock(spec=dummy_async_fn) if has_async_fn else None
+            )
+            mock_preload_fn = (
+                mocker.MagicMock(spec=dummy_preload_fn, return_value="preload_result")
+                if has_preload
+                else None
+            )
+            mock_finalize_fn1 = mocker.MagicMock(spec=dummy_finalize_fn)
+            mock_finalize_fn2 = mocker.MagicMock(spec=dummy_finalize_fn)
+
+            async_fn_args = tuple(f"arg{i}" for i in range(args_len))
 
             mock_async_request = AsyncRequest(
                 async_fn=mock_async_fn,
-                async_fn_args=("arg0", "arg1"),
+                async_fn_args=async_fn_args,
                 async_fn_kwargs={"kwarg1": "val1"},
                 finalize_fns=[mock_finalize_fn1, mock_finalize_fn2],
                 preload_fn=mock_preload_fn,
@@ -713,21 +744,34 @@ class TestMLFlashpointMegatronAsyncSaveStrategy:
 
             mocker.patch.object(strategy, "async_save", return_value=mock_async_request)
 
-            mock_barrier = mocker.patch("torch.distributed.barrier")
-            mocker.patch("torch.cuda.is_initialized", return_value=True)
-            mock_cuda_sync = mocker.patch("torch.cuda.synchronize")
+            mocker.patch("torch.distributed.is_initialized", return_value=dist_initialized)
+            mock_barrier = mocker.patch("torch.distributed.barrier", spec=torch.distributed.barrier)
+
+            mocker.patch("torch.cuda.is_initialized", return_value=cuda_initialized)
+            mock_cuda_sync = mocker.patch("torch.cuda.synchronize", spec=torch.cuda.synchronize)
 
             # When
             strategy.save(sharded_state_dict, checkpoint_id.data)
 
             # Then
-            mock_preload_fn.assert_called_once()
-            mock_cuda_sync.assert_called_once()
+            if has_preload:
+                mock_preload_fn.assert_called_once()
 
-            # Check that async_fn was called with updated args
-            # arg1 should be replaced by preload_result
-            mock_async_fn.assert_called_once_with("arg0", "preload_result", kwarg1="val1")
+            if has_async_fn:
+                expected_args = list(async_fn_args)
+                if has_preload and args_len > 1:
+                    expected_args[1] = "preload_result"
+                mock_async_fn.assert_called_once_with(*expected_args, kwarg1="val1")
 
-            mock_barrier.assert_called_once()
+            if cuda_initialized:
+                mock_cuda_sync.assert_called_once()
+            else:
+                mock_cuda_sync.assert_not_called()
+
+            if dist_initialized:
+                mock_barrier.assert_called_once()
+            else:
+                mock_barrier.assert_not_called()
+
             mock_finalize_fn1.assert_called_once()
             mock_finalize_fn2.assert_called_once()
