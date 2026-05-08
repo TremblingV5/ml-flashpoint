@@ -730,7 +730,7 @@ class TestMLFlashpointMegatronAsyncSaveStrategy:
 
             async_fn_args = tuple(f"arg{i}" for i in range(args_len))
 
-            mock_async_request = AsyncRequest(
+            test_async_request = AsyncRequest(
                 async_fn=mock_async_fn,
                 async_fn_args=async_fn_args,
                 async_fn_kwargs={"kwarg1": "val1"},
@@ -738,7 +738,7 @@ class TestMLFlashpointMegatronAsyncSaveStrategy:
                 preload_fn=mock_preload_fn,
             )
 
-            mocker.patch.object(strategy, "async_save", return_value=mock_async_request)
+            mocker.patch.object(strategy, "async_save", return_value=test_async_request)
 
             mocker.patch("torch.distributed.is_initialized", return_value=dist_initialized)
             mock_barrier = mocker.patch("torch.distributed.barrier", spec=torch.distributed.barrier)
