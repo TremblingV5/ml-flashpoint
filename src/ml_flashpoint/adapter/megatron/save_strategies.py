@@ -261,6 +261,7 @@ class MLFlashpointMegatronAsyncSaveStrategy(AsyncSaveShardedStrategy):
         )
 
     @override
+    @log_execution_time(logger=_LOGGER, name="save", level=logging.INFO)
     def save(self, sharded_state_dict: ShardedStateDict, checkpoint_dir: Union[str, Path]):
         """Trivial sync implementation that does not spin up a new process."""
         async_request = self.async_save(sharded_state_dict, checkpoint_dir)
