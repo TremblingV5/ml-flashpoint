@@ -721,13 +721,9 @@ class TestMLFlashpointMegatronAsyncSaveStrategy:
             def dummy_finalize_fn():
                 pass
 
-            mock_async_fn = (
-                mocker.MagicMock(spec=dummy_async_fn) if has_async_fn else None
-            )
+            mock_async_fn = mocker.MagicMock(spec=dummy_async_fn) if has_async_fn else None
             mock_preload_fn = (
-                mocker.MagicMock(spec=dummy_preload_fn, return_value="preload_result")
-                if has_preload
-                else None
+                mocker.MagicMock(spec=dummy_preload_fn, return_value="preload_result") if has_preload else None
             )
             mock_finalize_fn1 = mocker.MagicMock(spec=dummy_finalize_fn)
             mock_finalize_fn2 = mocker.MagicMock(spec=dummy_finalize_fn)
